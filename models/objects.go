@@ -26,6 +26,7 @@ type Object struct {
 	ID        null.Int64 `boil:"id" json:"id,omitempty" toml:"id" yaml:"id,omitempty"`
 	Path      string     `boil:"path" json:"path" toml:"path" yaml:"path"`
 	Type      string     `boil:"type" json:"type" toml:"type" yaml:"type"`
+	Size      int64      `boil:"size" json:"size" toml:"size" yaml:"size"`
 	Mtime     time.Time  `boil:"mtime" json:"mtime" toml:"mtime" yaml:"mtime"`
 	Sha256    string     `boil:"sha256" json:"sha256" toml:"sha256" yaml:"sha256"`
 	Status    string     `boil:"status" json:"status" toml:"status" yaml:"status"`
@@ -40,6 +41,7 @@ var ObjectColumns = struct {
 	ID        string
 	Path      string
 	Type      string
+	Size      string
 	Mtime     string
 	Sha256    string
 	Status    string
@@ -49,6 +51,7 @@ var ObjectColumns = struct {
 	ID:        "id",
 	Path:      "path",
 	Type:      "type",
+	Size:      "size",
 	Mtime:     "mtime",
 	Sha256:    "sha256",
 	Status:    "status",
@@ -97,6 +100,15 @@ func (w whereHelperstring) IN(slice []string) qm.QueryMod {
 	return qm.WhereIn(fmt.Sprintf("%s IN ?", w.field), values...)
 }
 
+type whereHelperint64 struct{ field string }
+
+func (w whereHelperint64) EQ(x int64) qm.QueryMod  { return qmhelper.Where(w.field, qmhelper.EQ, x) }
+func (w whereHelperint64) NEQ(x int64) qm.QueryMod { return qmhelper.Where(w.field, qmhelper.NEQ, x) }
+func (w whereHelperint64) LT(x int64) qm.QueryMod  { return qmhelper.Where(w.field, qmhelper.LT, x) }
+func (w whereHelperint64) LTE(x int64) qm.QueryMod { return qmhelper.Where(w.field, qmhelper.LTE, x) }
+func (w whereHelperint64) GT(x int64) qm.QueryMod  { return qmhelper.Where(w.field, qmhelper.GT, x) }
+func (w whereHelperint64) GTE(x int64) qm.QueryMod { return qmhelper.Where(w.field, qmhelper.GTE, x) }
+
 type whereHelpertime_Time struct{ field string }
 
 func (w whereHelpertime_Time) EQ(x time.Time) qm.QueryMod {
@@ -122,6 +134,7 @@ var ObjectWhere = struct {
 	ID        whereHelpernull_Int64
 	Path      whereHelperstring
 	Type      whereHelperstring
+	Size      whereHelperint64
 	Mtime     whereHelpertime_Time
 	Sha256    whereHelperstring
 	Status    whereHelperstring
@@ -131,6 +144,7 @@ var ObjectWhere = struct {
 	ID:        whereHelpernull_Int64{field: "\"objects\".\"id\""},
 	Path:      whereHelperstring{field: "\"objects\".\"path\""},
 	Type:      whereHelperstring{field: "\"objects\".\"type\""},
+	Size:      whereHelperint64{field: "\"objects\".\"size\""},
 	Mtime:     whereHelpertime_Time{field: "\"objects\".\"mtime\""},
 	Sha256:    whereHelperstring{field: "\"objects\".\"sha256\""},
 	Status:    whereHelperstring{field: "\"objects\".\"status\""},
@@ -155,8 +169,8 @@ func (*objectR) NewStruct() *objectR {
 type objectL struct{}
 
 var (
-	objectAllColumns            = []string{"id", "path", "type", "mtime", "sha256", "status", "created_at", "updated_at"}
-	objectColumnsWithoutDefault = []string{"path", "type", "mtime", "sha256", "status", "created_at", "updated_at"}
+	objectAllColumns            = []string{"id", "path", "type", "size", "mtime", "sha256", "status", "created_at", "updated_at"}
+	objectColumnsWithoutDefault = []string{"path", "type", "size", "mtime", "sha256", "status", "created_at", "updated_at"}
 	objectColumnsWithDefault    = []string{"id"}
 	objectPrimaryKeyColumns     = []string{"id"}
 )

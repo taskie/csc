@@ -568,7 +568,7 @@ func testObjectsSelect(t *testing.T) {
 }
 
 var (
-	objectDBTypes = map[string]string{`ID`: `INTEGER`, `Path`: `TEXT`, `Type`: `TEXT`, `Mtime`: `DATETIME`, `Sha256`: `TEXT`, `Status`: `TEXT`, `CreatedAt`: `DATETIME`, `UpdatedAt`: `DATETIME`}
+	objectDBTypes = map[string]string{`ID`: `INTEGER`, `Path`: `TEXT`, `Type`: `TEXT`, `Size`: `INTEGER`, `Mtime`: `DATETIME`, `Sha256`: `TEXT`, `Status`: `TEXT`, `CreatedAt`: `DATETIME`, `UpdatedAt`: `DATETIME`}
 	_             = bytes.MinRead
 )
 

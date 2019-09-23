@@ -37,12 +37,27 @@ func buildWalkFunc(ctx context.Context, db *sql.DB, basePath string) func(path s
 			return err
 		}
 		mtime := info.ModTime()
+		size := info.Size()
 
 		qs := []qm.QueryMod{
 			qm.Where(models.ObjectColumns.Path+" = ?", dbPath),
 		}
 		f, err := models.Objects(qs...).One(ctx, db)
 		if err == nil {
+			if f.Size == -1 {
+				q := qm.WhereIn(models.ObjectColumns.ID+" = ?", f.ID)
+				logrus.Debugf("Updating (size): %s", dbPath)
+				n, err := models.Objects(q).UpdateAll(ctx, db, map[string]interface{}{
+					models.ObjectColumns.Size: size,
+				})
+				if n != 1 {
+					logrus.Warn("invalid number of updated records: " + string(n))
+				}
+				if err != nil {
+					return err
+				}
+				logrus.Debugf("Updated (size): %s", dbPath)
+			}
 			if f.Mtime != mtime {
 				sha256Hex, err := csc.CalcSha256HexString(path)
 				if err != nil {
@@ -54,6 +69,7 @@ func buildWalkFunc(ctx context.Context, db *sql.DB, basePath string) func(path s
 					n, err := models.Objects(q).UpdateAll(ctx, db, map[string]interface{}{
 						models.ObjectColumns.Type:   "b",
 						models.ObjectColumns.Mtime:  mtime,
+						models.ObjectColumns.Size:   size,
 						models.ObjectColumns.Sha256: sha256Hex,
 					})
 					if n != 1 {
@@ -75,6 +91,7 @@ func buildWalkFunc(ctx context.Context, db *sql.DB, basePath string) func(path s
 				Path:      dbPath,
 				Type:      "b",
 				Mtime:     mtime,
+				Size:      size,
 				Sha256:    sha256Hex,
 				Status:    "ok",
 				UpdatedAt: time.Now(),
@@ -96,6 +113,7 @@ const initSQL = `CREATE TABLE objects (
 	id INTEGER PRIMARY KEY,
 	path TEXT UNIQUE NOT NULL,
 	type TEXT NOT NULL,
+	size INTEGER NOT NULL,
 	mtime DATETIME NOT NULL,
 	sha256 TEXT NOT NULL,
 	status TEXT NOT NULL,

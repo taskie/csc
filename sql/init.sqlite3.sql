@@ -2,6 +2,7 @@ CREATE TABLE objects (
     id INTEGER PRIMARY KEY,
     path TEXT UNIQUE NOT NULL,
     type TEXT NOT NULL,
+    size INTEGER NOT NULL,
     mtime DATETIME NOT NULL,
     sha256 TEXT NOT NULL,
     status TEXT NOT NULL,
