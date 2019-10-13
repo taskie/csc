@@ -2,155 +2,163 @@ package cscman
 
 import (
 	"context"
-	"database/sql"
-	"os"
 	"path/filepath"
-	"time"
 
+	"github.com/iancoleman/strcase"
+	"github.com/k0kubun/pp"
 	"github.com/sirupsen/logrus"
-	"github.com/taskie/csc"
-	"github.com/taskie/csc/models"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"github.com/taskie/csc/cscman"
+	"github.com/taskie/osplus"
 	"github.com/volatiletech/sqlboiler/boil"
-	"github.com/volatiletech/sqlboiler/queries/qm"
 )
 
-var absMode = true
-
-func buildWalkFunc(ctx context.Context, db *sql.DB, basePath string) func(path string, info os.FileInfo, err error) error {
-	return func(path string, info os.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if filepath.Base(path) == "csc.db" {
-			return nil
-		}
-		var dbPath string
-		if absMode {
-			dbPath, err = filepath.Abs(path)
-		} else {
-			dbPath, err = filepath.Rel(basePath, path)
-		}
-		if err != nil {
-			return err
-		}
-		mtime := info.ModTime()
-		size := info.Size()
-
-		qs := []qm.QueryMod{
-			qm.Where(models.ObjectColumns.Path+" = ?", dbPath),
-		}
-		f, err := models.Objects(qs...).One(ctx, db)
-		if err == nil {
-			if f.Size == -1 {
-				q := qm.WhereIn(models.ObjectColumns.ID+" = ?", f.ID)
-				logrus.Debugf("Updating (size): %s", dbPath)
-				n, err := models.Objects(q).UpdateAll(ctx, db, map[string]interface{}{
-					models.ObjectColumns.Size: size,
-				})
-				if n != 1 {
-					logrus.Warn("invalid number of updated records: " + string(n))
-				}
-				if err != nil {
-					return err
-				}
-				logrus.Debugf("Updated (size): %s", dbPath)
-			}
-			if f.Mtime != mtime {
-				sha256Hex, err := csc.CalcSha256HexString(path)
-				if err != nil {
-					return err
-				}
-				if f.Sha256 != sha256Hex {
-					q := qm.WhereIn(models.ObjectColumns.ID+" = ?", f.ID)
-					logrus.Debugf("Updating: %s", dbPath)
-					n, err := models.Objects(q).UpdateAll(ctx, db, map[string]interface{}{
-						models.ObjectColumns.Type:   "b",
-						models.ObjectColumns.Mtime:  mtime,
-						models.ObjectColumns.Size:   size,
-						models.ObjectColumns.Sha256: sha256Hex,
-					})
-					if n != 1 {
-						logrus.Warn("invalid number of updated records: " + string(n))
-					}
-					if err != nil {
-						return err
-					}
-					logrus.Infof("Updated: %s", dbPath)
-					return nil
-				}
-			}
-		} else {
-			sha256Hex, err := csc.CalcSha256HexString(path)
-			if err != nil {
-				return err
-			}
-			f = &models.Object{
-				Path:      dbPath,
-				Type:      "b",
-				Mtime:     mtime,
-				Size:      size,
-				Sha256:    sha256Hex,
-				Status:    "ok",
-				UpdatedAt: time.Now(),
-			}
-			logrus.Debugf("Inserting: %s", dbPath)
-			err = f.Insert(ctx, db, boil.Infer())
-			if err != nil {
-				// do nothing
-				// return err
-			}
-			logrus.Infof("Inserted: %s", dbPath)
-			return nil
-		}
-		return nil
-	}
+type Config struct {
+	User, Password, Host, Database, LogLevel string
 }
 
-const initSQL = `CREATE TABLE objects (
-	id INTEGER PRIMARY KEY,
-	path TEXT UNIQUE NOT NULL,
-	type TEXT NOT NULL,
-	size INTEGER NOT NULL,
-	mtime DATETIME NOT NULL,
-	sha256 TEXT NOT NULL,
-	status TEXT NOT NULL,
-	created_at DATETIME NOT NULL,
-	updated_at DATETIME NOT NULL
-);
-CREATE INDEX objects_path ON objects (path); 
-CREATE INDEX objects_sha256_path ON objects (sha256, path);
-CREATE INDEX objects_mtime ON objects (mtime);
-CREATE INDEX objects_updated_at ON objects (updated_at);
-`
+var configFile string
+var config Config
+var (
+	verbose, debug, version bool
+)
 
-func Main() {
-	// logrus.SetLevel(logrus.DebugLevel)
-	// boil.DebugMode = true
+func (c *Config) DBPath() string {
+	return c.User + ":" + c.Password + "@tcp(" + c.Host + ")/" + c.Database + "?charset=utf8mb4&collation=utf8mb4_bin&parseTime=true"
+}
 
-	dbName := "csc.db"
-	db, err := sql.Open("sqlite3", dbName)
+func prepare() (context.Context, *cscman.CscMan) {
+	ctx := context.Background()
+
+	config := cscman.CscManConfig{
+		DBPath: config.DBPath(),
+	}
+	logrus.Info(config.DBPath)
+	cm, err := cscman.NewCscMan(&config)
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	defer db.Close()
+	return ctx, cm
+}
 
-	ctx := context.Background()
-
-	_, err = models.Objects().Count(ctx, db)
+func register(cmd *cobra.Command, args []string) {
+	ctx, cm := prepare()
+	defer cm.Close()
+	name := args[0]
+	url := args[1]
+	err := cm.RegisterNamespace(ctx, name, url)
 	if err != nil {
-		_, err := db.Exec(initSQL)
-		if err != nil {
-			logrus.Fatal(err)
-		}
+		logrus.Fatal(err)
+	}
+}
+
+const RegisterCommandName = "register"
+
+var RegisterCommand = &cobra.Command{
+	Use:  RegisterCommandName + " NAME URL",
+	Args: cobra.ExactArgs(2),
+	Run:  register,
+}
+
+func sync(cmd *cobra.Command, args []string) {
+	ctx, cm := prepare()
+	defer cm.Close()
+	name := args[0]
+	namespace, err := cm.FindNamespace(ctx, name)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	err = cm.SyncWithCSCDB(ctx, namespace)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+}
+
+const SyncCommandName = "sync"
+
+var SyncCommand = &cobra.Command{
+	Use:  SyncCommandName + " NAME",
+	Args: cobra.ExactArgs(1),
+	Run:  sync,
+}
+
+const CommandName = "cscman"
+
+var Command = &cobra.Command{
+	Use: CommandName,
+}
+
+func init() {
+	Command.AddCommand(RegisterCommand, SyncCommand)
+	Command.PersistentFlags().StringVarP(&configFile, "config", "c", "", `config file (default "`+CommandName+`.yml")`)
+	Command.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	Command.PersistentFlags().BoolVar(&debug, "debug", false, "debug output")
+	Command.PersistentFlags().BoolVarP(&version, "version", "V", false, "show Version")
+	Command.Flags().StringP("user", "u", "", "user name")
+	Command.Flags().StringP("password", "p", "", "password")
+	Command.Flags().StringP("host", "H", "localhost", "database host")
+	Command.Flags().StringP("database", "d", "cscman", "database name")
+
+	for _, s := range []string{"user", "password", "host", "database"} {
+		envKey := strcase.ToSnake(s)
+		structKey := strcase.ToCamel(s)
+		viper.BindPFlag(envKey, Command.Flags().Lookup(s))
+		viper.RegisterAlias(structKey, envKey)
 	}
 
-	for _, arg := range os.Args[1:] {
-		err = filepath.Walk(arg, buildWalkFunc(ctx, db, arg))
+	cobra.OnInitialize(initConfig)
+}
+
+func initConfig() {
+	if debug {
+		logrus.SetLevel(logrus.DebugLevel)
+	} else if verbose {
+		logrus.SetLevel(logrus.InfoLevel)
+	} else {
+		logrus.SetLevel(logrus.WarnLevel)
+	}
+
+	if configFile != "" {
+		viper.SetConfigFile(configFile)
+	} else {
+		viper.SetConfigName(CommandName)
+		conf, err := osplus.GetXdgConfigHome()
 		if err != nil {
-			logrus.Fatal(err)
+			logrus.Info(err)
+		} else {
+			viper.AddConfigPath(filepath.Join(conf, CommandName))
+		}
+		viper.AddConfigPath(".")
+	}
+	viper.SetEnvPrefix(CommandName)
+	viper.AutomaticEnv()
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		logrus.Debug(err)
+	}
+	err = viper.Unmarshal(&config)
+	if err != nil {
+		logrus.Warn(err)
+	}
+}
+
+func Main() {
+	if config.LogLevel != "" {
+		lv, err := logrus.ParseLevel(config.LogLevel)
+		if err != nil {
+			logrus.Warn(err)
+		} else {
+			logrus.SetLevel(lv)
 		}
 	}
+	if debug {
+		if viper.ConfigFileUsed() != "" {
+			logrus.Debugf("Using config file: %s", viper.ConfigFileUsed())
+		}
+		logrus.Debug(pp.Sprint(config))
+		boil.DebugMode = true
+	}
+	Command.Execute()
 }

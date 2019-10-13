@@ -11,11 +11,20 @@ go get -u github.com/taskie/csc/cmd/cscman
 
 ## Usage
 
+### csc
+
 ```sh
-cscman .
+csc scan .
 csc path "$PWD"
 csc sha256 ff
-csc find ./README.md
+csc find ./foo.txt
+```
+
+### cscman
+
+```sh
+cscman register bar example.local:csc.db
+cscman sync bar
 ```
 
 ## License

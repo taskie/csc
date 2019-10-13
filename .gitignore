@@ -55,3 +55,7 @@ _testmain.go
 /test/coverage
 /vendor
 /tmp
+
+.env
+sqlboiler.toml
+dbconfig.yml
