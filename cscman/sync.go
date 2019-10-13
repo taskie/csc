@@ -15,30 +15,6 @@ import (
 	"github.com/volatiletech/sqlboiler/queries/qm"
 )
 
-type CscManConfig struct {
-	DBPath string `json:"db_path"`
-}
-
-type CscMan struct {
-	config *CscManConfig
-	db     *sql.DB
-}
-
-func NewCscMan(config *CscManConfig) (*CscMan, error) {
-	db, err := sql.Open("mysql", config.DBPath)
-	if err != nil {
-		return nil, err
-	}
-	return &CscMan{
-		config: config,
-		db:     db,
-	}, nil
-}
-
-func (cm *CscMan) Close() error {
-	return cm.db.Close()
-}
-
 func (cm *CscMan) Rsync(ctx context.Context, remote string) (string, error) {
 	f, err := ioutil.TempFile("", "csc.db")
 	if err != nil {

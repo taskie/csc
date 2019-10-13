@@ -2,6 +2,7 @@ package cscman
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/iancoleman/strcase"
@@ -9,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/taskie/csc"
 	"github.com/taskie/csc/cscman"
 	"github.com/taskie/osplus"
 	"github.com/volatiletech/sqlboiler/boil"
@@ -46,7 +48,10 @@ func register(cmd *cobra.Command, args []string) {
 	ctx, cm := prepare()
 	defer cm.Close()
 	name := args[0]
-	url := args[1]
+	url := name + "/csc.db"
+	if len(args) > 1 {
+		url = args[1]
+	}
 	err := cm.RegisterNamespace(ctx, name, url)
 	if err != nil {
 		logrus.Fatal(err)
@@ -56,8 +61,8 @@ func register(cmd *cobra.Command, args []string) {
 const RegisterCommandName = "register"
 
 var RegisterCommand = &cobra.Command{
-	Use:  RegisterCommandName + " NAME URL",
-	Args: cobra.ExactArgs(2),
+	Use:  RegisterCommandName + " NAME [URL]",
+	Args: cobra.RangeArgs(1, 2),
 	Run:  register,
 }
 
@@ -83,6 +88,59 @@ var SyncCommand = &cobra.Command{
 	Run:  sync,
 }
 
+func sha256(cmd *cobra.Command, args []string) {
+	ctx, cm := prepare()
+	defer cm.Close()
+
+	for _, arg := range args {
+		objs, err := cm.FindObjectBySha256Prefix(ctx, arg)
+		if err != nil {
+			logrus.Fatal(err)
+		}
+		for _, obj := range objs {
+			fmt.Printf("%s\t%s\t%s\n", obj.Sha256, obj.Namespace, obj.Path)
+		}
+	}
+}
+
+const Sha256CommandName = "sha256"
+
+var Sha256Command = &cobra.Command{
+	Use:  Sha256CommandName + " SHA256",
+	Args: cobra.ExactArgs(1),
+	Run:  sha256,
+}
+
+func find(cmd *cobra.Command, args []string) {
+	ctx, cm := prepare()
+	defer cm.Close()
+
+	sha256hexs := make([]interface{}, 0)
+	for _, arg := range args {
+		sha256hex, err := csc.CalcSha256HexString(arg)
+		if err != nil {
+			logrus.Error(err)
+			continue
+		}
+		sha256hexs = append(sha256hexs, sha256hex)
+	}
+	objs, err := cm.FindObjectBySha256s(ctx, args)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	for _, obj := range objs {
+		fmt.Printf("%s\t%s\t%s\n", obj.Sha256, obj.Namespace, obj.Path)
+	}
+}
+
+const FindCommandName = "find"
+
+var FindCommand = &cobra.Command{
+	Use:  FindCommandName + " FILE",
+	Args: cobra.ExactArgs(1),
+	Run:  find,
+}
+
 const CommandName = "cscman"
 
 var Command = &cobra.Command{
@@ -90,7 +148,7 @@ var Command = &cobra.Command{
 }
 
 func init() {
-	Command.AddCommand(RegisterCommand, SyncCommand)
+	Command.AddCommand(RegisterCommand, SyncCommand, Sha256Command, FindCommand)
 	Command.PersistentFlags().StringVarP(&configFile, "config", "c", "", `config file (default "`+CommandName+`.yml")`)
 	Command.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	Command.PersistentFlags().BoolVar(&debug, "debug", false, "debug output")
