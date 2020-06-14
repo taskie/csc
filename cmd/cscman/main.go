@@ -6,6 +6,10 @@ import (
 	"github.com/taskie/csc/cli/cscman"
 )
 
+var (
+	version, commit, date string
+)
+
 func main() {
 	cscman.Main()
 }

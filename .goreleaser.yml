@@ -1,0 +1,21 @@
+builds:
+  - id: csc
+    main: ./cmd/csc/main.go
+    binary: csc
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+    ldflags: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}'
+  - id: cscman
+    main: ./cmd/cscman/main.go
+    binary: cscman
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+    ldflags: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}'

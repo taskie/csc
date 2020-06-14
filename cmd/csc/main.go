@@ -5,6 +5,10 @@ import (
 	"github.com/taskie/csc/cli/csc"
 )
 
+var (
+	version, commit, date string
+)
+
 func main() {
 	csc.Main()
 }
